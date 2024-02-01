@@ -1,0 +1,137 @@
+# Django App
+apiVersion: v1
+kind: Deployment
+metadata:
+  name: django
+spec:
+  containers:
+    - name: django
+      image: django-app:latest
+      ports:
+        - containerPort: 8000
+          protocol: TCP
+      env:
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: secret
+              key: db_password
+        - name: DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: configmap
+              key: db_name
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: secret
+              key: db_user
+
+---
+#Secrets
+apiVersion: v1
+kind: Secret
+metadata:
+  name: secret
+type: Opaque
+data:
+  db_password: cGFzc3dvcmQ=
+  db_user: bmFr
+  mariadb-root-password: c2VjcmV0
+
+---
+#ConfigMap (Used to store non-sensitive env)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: configmap
+data:
+  database_url: mariadb-internal-service #name of service
+  db_name: nirnay1
+
+---
+# MariaDB Service (Internal or external connection exposure point)
+apiVersion: v1
+kind: Service
+metadata:
+  name: mariadb-internal-service
+spec:
+  selector:
+    app: mariadb
+  ports:
+    - protocol: TCP
+      port: 3306
+      targetPort: 3306
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: phpmyadmin-service
+spec:
+  type: LoadBalancer # port type
+  selector:
+    app: mariadb
+  ports:
+    - protocol: TCP
+      port: 8080 # same port of a service as for a pods
+      targetPort: 8080 # targeting containerPort
+      nodePort: 30100 # external IP port from 30000 till 32767 range
+
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mariadb-pv-claim
+  labels:
+    app: mariadb
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 300M
+
+---
+apiVersion: apps/v1
+kind: Deployment # what to create?
+metadata:
+  name: mariadb-deployment
+spec: # specification for deployment resource
+  replicas: 2 # how many replicas of pods we want to create
+  selector:
+    matchLabels:
+      app: mariadb
+  template: # blueprint for pods
+    metadata:
+      labels:
+        app: mariadb # service will look for this label
+    spec: # specification for Pods
+      containers:
+        - name: mariadb
+          image: mariadb
+          ports:
+            - containerPort: 3306
+          env:
+            - name: MARIADB_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: secret
+                  key: mariadb-root-password
+          volumeMounts:
+            - name: mariadb-pv
+              mountPath: /var/lib/mysql
+        - name: phpmyadmin
+          image: bitnami/phpmyadmin:latest
+          ports:
+            - containerPort: 8080
+          env:
+            - name: DATABASE_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: configmap
+                  key: database_url
+      volumes:
+        - name: mariadb-pv
+          persistentVolumeClaim:
+            claimName: mariadb-pv-claim

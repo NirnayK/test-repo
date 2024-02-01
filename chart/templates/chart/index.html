@@ -1,0 +1,9 @@
+<!-- chart/templates/chart/index.html -->
+{% if links_list %}
+<ul>
+  <li><a href="{% url 'chart:schools' %}">{{ links_list.0 }}</a></li>
+  <li><a href="{% url 'chart:matches' %}">{{ links_list.1 }}</a></li>
+</ul>
+{% else %}
+<p>Code not working</p>
+{% endif %}
